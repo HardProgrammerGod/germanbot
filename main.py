@@ -25,10 +25,10 @@ async def delayed_upsell(user_id: int):
     if user_id in user_states and not user_states[user_id].get('purchased', False):
         try:
             text = (
-        "Hey! 👋 Schön, dass du mich gefunden hast.\n\n"
-        "Ich kriege hier so viele Nachrichten... Lass uns hier schreiben, "
-        "damit ich dich nicht verliere. Was möchtest du machen? 👇"
-    )
+                "Hey! 👋 Schön, dass du mich gefunden hast.\n\n"
+                "Ich kriege hier so viele Nachrichten... Lass uns hier schreiben, "
+                "damit ich dich nicht verliere. Was möchtest du machen? 👇"
+            )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Lass uns schreiben! ✨", callback_data="buy_chat")]
             ])
@@ -37,11 +37,22 @@ async def delayed_upsell(user_id: int):
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
+    # Добавленные переменные для корректного отображения
     user_id = message.from_user.id
+    full_name = message.from_user.full_name
+    username = f"@{message.from_user.username}" if message.from_user.username else "нет юзернейма"
+    
     user_states[user_id] = {'purchased': False}
     
-    # Уведомление админу
-    admin_msg = f"🔔 **Новый!**\n👤 {message.from_user.full_name}\n📱 [ПРОФИЛЬ](tg://user?id={user_id})"
+    # Твое нормальное отображение профиля для админа
+    admin_msg = (
+        f"🔔 **Новый зашел!**\n\n"
+        f"👤 Имя: {full_name}\n"
+        f"🆔 ID: `{user_id}`\n"
+        f"🔗 Юзер: {username}\n"
+        f"📱 Профиль: [ОТКРЫТЬ](tg://user?id={user_id})"
+    )
+    
     await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
     
     await bot.send_chat_action(message.chat.id, "typing")
