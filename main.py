@@ -24,7 +24,11 @@ async def delayed_upsell(user_id: int):
     await asyncio.sleep(3600) 
     if user_id in user_states and not user_states[user_id].get('purchased', False):
         try:
-            text = "Hey... ich warte immer noch auf dich im Chat. Bist du noch da? 😘"
+            text = (
+        "Hey! 👋 Schön, dass du mich gefunden hast.\n\n"
+        "Ich kriege hier so viele Nachrichten... Lass uns hier schreiben, "
+        "damit ich dich nicht verliere. Was möchtest du machen? 👇"
+    )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Lass uns schreiben! ✨", callback_data="buy_chat")]
             ])
@@ -54,7 +58,7 @@ async def start_handler(message: types.Message):
 async def create_invoice(callback: types.CallbackQuery):
     item = callback.data.split("_")[1]
     await callback.message.answer_invoice(
-        title="Premium Access", description="Exklusiver Content", payload=f"payload_{item}",
+        title="Premium Zugang", description="Exklusiver Content und Chat", payload=f"payload_{item}",
         currency="XTR", prices=[LabeledPrice(label="Stars", amount=PRICES[item])]
     )
     await callback.answer()
