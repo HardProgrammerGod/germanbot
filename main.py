@@ -1,26 +1,24 @@
 import asyncio
 import logging
 import os
-from dotenv import load_dotenv # Необхідно для зчитування .env
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import LabeledPrice, PreCheckoutQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command, CommandObject
 from aiohttp import web
 
-# Завантажуємо змінні з файлу .env
+# Загрузка переменных
 load_dotenv()
 
-# --- НАЛАШТУВАННЯ (ЗЧИТУВАННЯ З ОТОЧЕННЯ) ---
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 GIRL_USER = os.getenv("GIRL_USER", "@ni2282")
 
 if not TOKEN:
-    exit("Помилка: BOT_TOKEN не знайдено в системних змінних!")
+    exit("Ошибка: BOT_TOKEN не найден!")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
 user_data = {}
 
 LANG_TEXTS = {
@@ -49,37 +47,36 @@ LANG_TEXTS = {
         'donate': "Apóyame (Estrellas) ⭐",
         'thanks': "¡Gracias! ❤️ Aquí está mi perfil: ",
         'invoice_title': "Acceso Premium",
-        'invoice_desc': "Contenido exclusivo y chat"
+        'invoice_desc': "Contenido exclusivo e chat"
     }
 }
 
 DONATE_AMOUNTS = [100, 250, 300, 500, 750, 1000, 2500, 5000, 10000]
 
+# --- WEB SERVER ДЛЯ RENDER ---
 async def handle(request):
-    return web.Response(text="Bot is running!")
+    return web.Response(text="Bot is alive!")
 
-# --- ОБРОБНИКИ ---
-
+# --- ОБРАБОТЧИКИ ---
 @dp.message(Command("start"))
 async def start_handler(message: types.Message, command: CommandObject):
     user_id = message.from_user.id
-    username = f"@{message.from_user.username}" if message.from_user.username else "Немає"
+    username = f"@{message.from_user.username}" if message.from_user.username else "Нет"
     full_name = message.from_user.full_name
-    
-    ref_code = command.args if command.args else "Прямий вхід"
+    ref_code = command.args if command.args else "Прямой вход"
 
     admin_msg = (
-        f"🔔 **Новий користувач!**\n\n"
-        f"👤 Ім'я: {full_name}\n"
+        f"🔔 **Новый юзер!**\n\n"
+        f"👤 Имя: {full_name}\n"
         f"🆔 ID: `{user_id}`\n"
-        f"🔗 Нік: {username}\n"
-        f"🎟 Реф. посилання: `{ref_code}`"
+        f"🔗 Ник: {username}\n"
+        f"🎟 Реф: `{ref_code}`"
     )
 
     try:
         await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Адмін не отримав сповіщення: {e}")
+    except Exception:
+        pass
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="English 🇺🇸", callback_data="lang_en")],
@@ -91,7 +88,7 @@ async def start_handler(message: types.Message, command: CommandObject):
 @dp.callback_query(F.data.startswith("lang_"))
 async def set_language(callback: types.CallbackQuery):
     lang = callback.data.split("_")[1]
-    user_data[callback.from_user.id] = {'lang': lang, 'purchased': False}
+    user_data[callback.from_user.id] = {'lang': lang}
     
     texts = LANG_TEXTS[lang]
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -99,14 +96,11 @@ async def set_language(callback: types.CallbackQuery):
         [InlineKeyboardButton(text=texts['chat'], callback_data="buy_chat")],
         [InlineKeyboardButton(text=texts['donate'], callback_data="menu_donate")]
     ])
-    
     await callback.message.edit_text(texts['welcome'], reply_markup=kb)
-    await callback.answer()
 
 @dp.callback_query(F.data == "menu_donate")
 async def show_donate_menu(callback: types.CallbackQuery):
     lang = user_data.get(callback.from_user.id, {}).get('lang', 'en')
-    
     buttons = []
     row = []
     for amount in DONATE_AMOUNTS:
@@ -114,27 +108,20 @@ async def show_donate_menu(callback: types.CallbackQuery):
         if len(row) == 3:
             buttons.append(row)
             row = []
-    
     buttons.append([InlineKeyboardButton(text="⬅️ Back", callback_data=f"lang_{lang}")])
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await callback.message.edit_text("Choose donation amount:", reply_markup=kb)
-    await callback.answer()
+    await callback.message.edit_text("Choose amount:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 @dp.callback_query(F.data.startswith(("buy_", "star_")))
 async def create_invoice(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    lang = user_data.get(user_id, {}).get('lang', 'en')
+    lang = user_data.get(callback.from_user.id, {}).get('lang', 'en')
     texts = LANG_TEXTS[lang]
-    
-    data_parts = callback.data.split("_")
-    action, value = data_parts[0], data_parts[1]
-
-    amount = 490 if value == "photos" else 990 if value == "chat" else int(value)
+    val = callback.data.split("_")[1]
+    amount = 490 if val == "photos" else 990 if val == "chat" else int(val)
 
     await callback.message.answer_invoice(
         title=texts['invoice_title'],
         description=texts['invoice_desc'],
-        payload=f"pay_{value}",
+        payload=f"pay_{val}",
         currency="XTR",
         prices=[LabeledPrice(label="Stars", amount=amount)]
     )
@@ -146,28 +133,30 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def success_payment_handler(message: types.Message):
-    user_id = message.from_user.id
-    lang = user_data.get(user_id, {}).get('lang', 'en')
-    texts = LANG_TEXTS[lang]
+    lang = user_data.get(message.from_user.id, {}).get('lang', 'en')
+    await message.answer(f"{LANG_TEXTS[lang]['thanks']}{GIRL_USER}")
+    await bot.send_message(ADMIN_ID, f"💰 ОПЛАТА: {message.successful_payment.total_amount} Stars от {message.from_user.full_name}")
 
-    if user_id in user_data:
-        user_data[user_id]['purchased'] = True
-    
-    await message.answer(f"{texts['thanks']}{GIRL_USER}")
-    await bot.send_message(ADMIN_ID, f"💰 **ОПЛАТА** ({message.successful_payment.total_amount} Stars) від {message.from_user.full_name}")
-
+# --- ЗАПУСК ---
 async def main():
     logging.basicConfig(level=logging.INFO)
+    
+    # Настройка сервера
     app = web.Application()
     app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start() # Важно: ждем старта сервера
     
-    asyncio.create_task(site.start())
-    await dp.start_polling(bot)
+    logging.info(f"Server started on port {port}")
+
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
