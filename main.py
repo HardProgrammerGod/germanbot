@@ -1,76 +1,142 @@
 import asyncio
 import logging
 import os
+from dotenv import load_dotenv # Необхідно для зчитування .env
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import LabeledPrice, PreCheckoutQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiohttp import web
 
-# --- НАСТРОЙКИ (БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ) ---
+# Завантажуємо змінні з файлу .env
+load_dotenv()
+
+# --- НАЛАШТУВАННЯ (ЗЧИТУВАННЯ З ОТОЧЕННЯ) ---
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
-GIRL_USER = os.getenv("GIRL_USERNAME", "@default_profile")
+GIRL_USER = os.getenv("GIRL_USER", "@ni2282")
+
+if not TOKEN:
+    exit("Помилка: BOT_TOKEN не знайдено в системних змінних!")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-user_states = {}
 
-PRICES = {'photos': 490, 'chat': 990}
+user_data = {}
+
+LANG_TEXTS = {
+    'en': {
+        'welcome': "Hey! 👋 Nice to meet you. Let's chat here!",
+        'photos': "My private photos 📸",
+        'chat': "Chat with me personally 🤗",
+        'donate': "Support me (Stars) ⭐",
+        'thanks': "Thank you! ❤️ Here is my profile: ",
+        'invoice_title': "Premium Access",
+        'invoice_desc': "Exclusive content and chat"
+    },
+    'de': {
+        'welcome': "Hey! 👋 Schön, dass du mich gefunden hast. Lass uns hier schreiben!",
+        'photos': "Meine privaten Fotos 📸",
+        'chat': "Mit mir persönlich chatten 🤗",
+        'donate': "Unterstütze mich (Stars) ⭐",
+        'thanks': "Danke! ❤️ Hier ist mein Profil: ",
+        'invoice_title': "Premium Zugang",
+        'invoice_desc': "Exklusiver Content und Chat"
+    },
+    'es': {
+        'welcome': "¡Hola! 👋 Qué bueno que me encontraste. ¡Hablemos por aquí!",
+        'photos': "Mis fotos privadas 📸",
+        'chat': "Chatea conmigo personalmente 🤗",
+        'donate': "Apóyame (Estrellas) ⭐",
+        'thanks': "¡Gracias! ❤️ Aquí está mi perfil: ",
+        'invoice_title': "Acceso Premium",
+        'invoice_desc': "Contenido exclusivo y chat"
+    }
+}
+
+DONATE_AMOUNTS = [100, 250, 300, 500, 750, 1000, 2500, 5000, 10000]
 
 async def handle(request):
     return web.Response(text="Bot is running!")
 
-async def delayed_upsell(user_id: int):
-    await asyncio.sleep(3600) 
-    if user_id in user_states and not user_states[user_id].get('purchased', False):
-        try:
-            text = (
-                "Hey! 👋 Schön, dass du mich gefunden hast.\n\n"
-                "Ich kriege hier so viele Nachrichten... Lass uns hier schreiben, "
-                "damit ich dich nicht verliere. Was möchtest du machen? 👇"
-            )
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Lass uns schreiben! ✨", callback_data="buy_chat")]
-            ])
-            await bot.send_message(user_id, text, reply_markup=kb)
-        except: pass
+# --- ОБРОБНИКИ ---
 
 @dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    # Добавленные переменные для корректного отображения
+async def start_handler(message: types.Message, command: CommandObject):
     user_id = message.from_user.id
+    username = f"@{message.from_user.username}" if message.from_user.username else "Немає"
     full_name = message.from_user.full_name
-    username = f"@{message.from_user.username}" if message.from_user.username else "нет юзернейма"
     
-    user_states[user_id] = {'purchased': False}
-    
-    # Твое нормальное отображение профиля для админа
-    admin_msg = (
-        f"🔔 **Новый зашел!**\n\n"
-        f"👤 Имя: {full_name}\n"
-        f"🆔 ID: `{user_id}`\n"
-        f"🔗 Юзер: {username}\n"
-        f"📱 Профиль: [ОТКРЫТЬ](tg://user?id={user_id})"
-    )
-    
-    await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
-    
-    await bot.send_chat_action(message.chat.id, "typing")
-    await asyncio.sleep(1.5)
-    
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Meine privaten Fotos 📸", callback_data="buy_photos")],
-        [InlineKeyboardButton(text="Mit mir persönlich chatten 🤗", callback_data="buy_chat")]
-    ])
-    await message.answer("Hey! 👋 Schön, dass du mich gefunden hast. Lass uns hier schreiben!", reply_markup=kb)
-    asyncio.create_task(delayed_upsell(user_id))
+    ref_code = command.args if command.args else "Прямий вхід"
 
-@dp.callback_query(F.data.startswith("buy_"))
+    admin_msg = (
+        f"🔔 **Новий користувач!**\n\n"
+        f"👤 Ім'я: {full_name}\n"
+        f"🆔 ID: `{user_id}`\n"
+        f"🔗 Нік: {username}\n"
+        f"🎟 Реф. посилання: `{ref_code}`"
+    )
+
+    try:
+        await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Адмін не отримав сповіщення: {e}")
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="English 🇺🇸", callback_data="lang_en")],
+        [InlineKeyboardButton(text="Deutsch 🇩🇪", callback_data="lang_de")],
+        [InlineKeyboardButton(text="Español 🇪🇸", callback_data="lang_es")]
+    ])
+    await message.answer("Please choose your language:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("lang_"))
+async def set_language(callback: types.CallbackQuery):
+    lang = callback.data.split("_")[1]
+    user_data[callback.from_user.id] = {'lang': lang, 'purchased': False}
+    
+    texts = LANG_TEXTS[lang]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=texts['photos'], callback_data="buy_photos")],
+        [InlineKeyboardButton(text=texts['chat'], callback_data="buy_chat")],
+        [InlineKeyboardButton(text=texts['donate'], callback_data="menu_donate")]
+    ])
+    
+    await callback.message.edit_text(texts['welcome'], reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data == "menu_donate")
+async def show_donate_menu(callback: types.CallbackQuery):
+    lang = user_data.get(callback.from_user.id, {}).get('lang', 'en')
+    
+    buttons = []
+    row = []
+    for amount in DONATE_AMOUNTS:
+        row.append(InlineKeyboardButton(text=f"⭐ {amount}", callback_data=f"star_{amount}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    
+    buttons.append([InlineKeyboardButton(text="⬅️ Back", callback_data=f"lang_{lang}")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text("Choose donation amount:", reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith(("buy_", "star_")))
 async def create_invoice(callback: types.CallbackQuery):
-    item = callback.data.split("_")[1]
+    user_id = callback.from_user.id
+    lang = user_data.get(user_id, {}).get('lang', 'en')
+    texts = LANG_TEXTS[lang]
+    
+    data_parts = callback.data.split("_")
+    action, value = data_parts[0], data_parts[1]
+
+    amount = 490 if value == "photos" else 990 if value == "chat" else int(value)
+
     await callback.message.answer_invoice(
-        title="Premium Zugang", description="Exklusiver Content und Chat", payload=f"payload_{item}",
-        currency="XTR", prices=[LabeledPrice(label="Stars", amount=PRICES[item])]
+        title=texts['invoice_title'],
+        description=texts['invoice_desc'],
+        payload=f"pay_{value}",
+        currency="XTR",
+        prices=[LabeledPrice(label="Stars", amount=amount)]
     )
     await callback.answer()
 
@@ -80,21 +146,28 @@ async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def success_payment_handler(message: types.Message):
-    if message.from_user.id in user_states:
-        user_states[message.from_user.id]['purchased'] = True
+    user_id = message.from_user.id
+    lang = user_data.get(user_id, {}).get('lang', 'en')
+    texts = LANG_TEXTS[lang]
+
+    if user_id in user_data:
+        user_data[user_id]['purchased'] = True
     
-    await message.answer(f"Danke! ❤️ Hier ist mein Profil: {GIRL_USER}")
-    await bot.send_message(ADMIN_ID, f"💰 ОПЛАТА от {message.from_user.full_name}")
+    await message.answer(f"{texts['thanks']}{GIRL_USER}")
+    await bot.send_message(ADMIN_ID, f"💰 **ОПЛАТА** ({message.successful_payment.total_amount} Stars) від {message.from_user.full_name}")
 
 async def main():
+    logging.basicConfig(level=logging.INFO)
     app = web.Application()
     app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
+    
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    
     asyncio.create_task(site.start())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
